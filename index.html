@@ -46,6 +46,9 @@ input:focus,textarea:focus{outline:2px solid var(--acc);border-color:var(--acc)}
 #tn{color:var(--mut);font-size:14px}
 .tc{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:6px 18px;margin:8px 0 16px;min-height:200px}
 .tc p{margin:12px 0}
+.dw,.dr{border-radius:3px;font-weight:700;text-decoration:underline;padding:0 1px}
+.dw{color:var(--bad);background:color-mix(in srgb,var(--bad) 20%,transparent)}
+.dr{color:var(--ok);background:color-mix(in srgb,var(--ok) 20%,transparent)}
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){#bar{transition:none!important}}
 </style>
@@ -54,7 +57,7 @@ input:focus,textarea:focus{outline:2px solid var(--acc);border-color:var(--acc)}
 <main>
 <section id="home">
   <h1>키오스크 코드 암기</h1>
-  <p class="s">Menu부터 Main까지 7개 파일을 단계별로 외워요. 들여쓰기는 검사하지 않고, 글자·기호·띄어쓰기는 정확히 봅니다. 모든 단계에서 Tab 키는 공백 4칸이에요.</p>
+  <p class="s">Menu부터 Main까지 7개 파일을 단계별로 외워요. 들여쓰기와 불필요한 띄어쓰기(예: Menu {와 Menu{)는 있어도 없어도 통과예요. 글자와 기호는 정확히 봅니다. 단, public class처럼 단어 사이 띄어쓰기는 있어야 해요. 모든 단계에서 Tab 키는 공백 4칸이에요.</p>
   <div class="row"><label for="st">시작 파일 (1·2차)</label><select id="st"></select><button class="b" id="ed">코드 직접 입력·수정</button><button class="b" id="tb">사용법</button></div>
   <div class="modes">
     <button class="mode" data-m="1"><b>1차: 한 줄 보고 입력</b><span>한 줄을 5초 보여준 뒤 숨깁니다. 틀리면 그 클래스를 처음 줄부터 다시 해요.</span></button>
@@ -271,6 +274,17 @@ function persist() {
 const names = Object.keys(S);
 const L = i => S[names[i]].split("\n").filter(l => l.trim());
 const T = s => s.trim();
+/* 비교용 정규화: 단어와 단어 사이가 아닌 띄어쓰기는 있어도 없어도 같게 본다 */
+const W = /[A-Za-z0-9_가-힣ㄱ-ㅎㅏ-ㅣ]/;
+function NM(s) {
+  s = s.trim().replace(/\s+/g, " "); let r = ""; const ix = [];
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === " " && !(W.test(s[i - 1] || "") && W.test(s[i + 1] || ""))) continue;
+    r += s[i]; ix.push(i);
+  }
+  return { s, r, ix };
+}
+const N = s => s === undefined ? s : NM(s).r;
 /* 빈 줄 기준으로 나눈 부분(필드·생성자·메서드) 번호 */
 const SEC = i => { let s = 0; const r = []; S[names[i]].split("\n").forEach(l => { if (!l.trim()) s++; else r.push(s); }); return r; };
 function prevText() {
@@ -285,6 +299,31 @@ function prevText() {
   return idx.map(k => A[k]).join("\n");
 }
 function drawPrev() { const pt = prevText(); prev.hidden = !pt; prev.textContent = pt; }
+
+/* 1차 오답 표시: 내가 친 줄과 정답을 나란히 놓고 다른 부분을 색으로 표시 */
+function hl(o, p, q, cls) {
+  const n = o.r.length, mid = n - q > p;
+  const st = mid ? o.ix[p] : (p > 0 ? o.ix[p - 1] + 1 : 0);
+  const en = mid ? o.ix[n - q - 1] + 1 : st;
+  const sp = document.createElement("span");
+  sp.className = cls; sp.textContent = o.s.slice(st, en) || "▯";
+  return [o.s.slice(0, st), sp, o.s.slice(en)];
+}
+function showDiff(user, right) {
+  const u = NM(user), c = NM(right), a = u.r, b = c.r;
+  let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++;
+  let q = 0; while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+  const am = a.slice(p, a.length - q), bm = b.slice(p, b.length - q);
+  show.className = "";
+  show.replaceChildren("내가 친 것\n", ...hl(u, p, q, "dw"), "\n\n정답\n", ...hl(c, p, q, "dr"));
+  if (!am) return "“" + bm + "” 부분이 빠졌어요.";
+  if (!bm) return "“" + am + "” 부분이 더 들어갔어요.";
+  return "빨간 부분 “" + am + "” 대신 초록 부분 “" + bm + "”이(가) 와야 해요.";
+}
+function m1Restart() { li = 0; m1Line(); }
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.repeat && locked && mode === 1 && e.target !== inp) m1Restart();
+});
 const $ = id => document.getElementById(id);
 const home = $("home"), run = $("run"), show = $("show"), hint = $("hint"), inp = $("inp"), ta = $("ta"),
   go = $("go"), msg = $("msg"), ttl = $("ttl"), prog = $("prog"), barw = $("barw"), bar = $("bar"), prev = $("prev");
@@ -350,8 +389,8 @@ ec.addEventListener("keydown", e => {
 
 /* 사용법 튜토리얼 */
 const TUT = [
-  { t: "이 앱으로 하는 일", b: ["Menu부터 Main까지 7개 파일을 세 단계로 나눠 외워요.", "1차는 한 줄씩, 2차는 파일 이름만 보고, 3차는 파일 전체를 쳐요.", "들여쓰기와 빈 줄은 검사하지 않고, 글자·기호·띄어쓰기는 정확히 봅니다.", "입력창에서 Tab을 누르면 공백 4칸이 들어가요."] },
-  { t: "1차 · 한 줄씩 보고 입력", b: ["한 줄이 5초 동안 크게 나오고, 위쪽 막대가 줄어들어요.", "막대가 끝나면 줄이 사라지고 입력창이 열려요. 외운 대로 치고 Enter를 누르세요.", "맞으면 다음 줄로, 틀리면 정답을 3초 보여준 뒤 그 파일의 첫 줄부터 다시 시작해요.", "위쪽 “내가 친 코드 보기”에서 현재 부분, 바로 이전 줄, 지금까지 전부, 보지 않기 중에 고를 수 있어요."] },
+  { t: "이 앱으로 하는 일", b: ["Menu부터 Main까지 7개 파일을 세 단계로 나눠 외워요.", "1차는 한 줄씩, 2차는 파일 이름만 보고, 3차는 파일 전체를 쳐요.", "들여쓰기, 빈 줄, 불필요한 띄어쓰기는 있어도 없어도 통과예요. 글자와 기호는 정확히 보고, public class처럼 단어 사이 띄어쓰기는 있어야 해요.", "입력창에서 Tab을 누르면 공백 4칸이 들어가요."] },
+  { t: "1차 · 한 줄씩 보고 입력", b: ["한 줄이 5초 동안 크게 나오고, 위쪽 막대가 줄어들어요.", "막대가 끝나면 줄이 사라지고 입력창이 열려요. 외운 대로 치고 Enter를 누르세요.", "맞으면 다음 줄로 넘어가요. 틀리면 내가 친 줄과 정답을 나란히 보여주고 다른 부분을 색으로 표시해요. 확인한 뒤 Enter를 누르면 그 파일의 첫 줄부터 다시 시작해요.", "위쪽 “내가 친 코드 보기”에서 현재 부분, 바로 이전 줄, 지금까지 전부, 보지 않기 중에 고를 수 있어요."] },
   { t: "2차 · 파일 이름만 보고 입력", b: ["파일 이름만 있는 백지에서 한 줄씩 입력해요. 맞게 친 줄은 위에 쌓여요.", "5초 동안 입력이 없으면 지금 칠 줄이 3초 동안 힌트로 나와요.", "틀리면 정답을 잠깐 보여주고 같은 줄을 다시 입력하게 해요.", "한 파일을 끝내면 다음 파일로 넘어가요."] },
   { t: "3차 · 파일 전체 입력", b: ["입력창에 파일 하나를 통째로 치고 검사하기(Ctrl+Enter)를 누르세요.", "틀린 줄마다 내가 쓴 것과 정답을 나란히 보여줘요.", "하나라도 틀리면 첫 번째 파일부터 다시 시작해요. 7개를 모두 통과하면 끝이에요."] },
   { t: "내 코드 넣기", b: ["홈 화면의 “코드 직접 입력·수정”에서 파일을 고르고, 내 코드를 붙여 넣은 뒤 저장하세요.", "저장한 코드는 이 브라우저에 남고, 1·2·3차가 모두 그 코드로 진행돼요.", "빈 줄로 필드·생성자·메서드를 나눠 두면 1차의 부분 보기가 잘 작동해요.", "“기본 코드로 되돌리기”로 파일별 원본을 복구할 수 있어요."] },
@@ -426,7 +465,7 @@ function m3Check() {
   if (locked) return;
   const u = ta.value.split("\n").map(T).filter(Boolean), a = L(ci).map(T), out = [];
   for (let i = 0; i < Math.max(u.length, a.length); i++) {
-    if (u[i] !== a[i]) out.push((i + 1) + "번째 줄\n  내가 쓴 것: " + (u[i] === undefined ? "(없음)" : u[i]) + "\n  정답: " + (a[i] === undefined ? "(필요 없음)" : a[i]));
+    if (N(u[i]) !== N(a[i])) out.push((i + 1) + "번째 줄\n  내가 쓴 것: " + (u[i] === undefined ? "(없음)" : u[i]) + "\n  정답: " + (a[i] === undefined ? "(필요 없음)" : a[i]));
     if (out.length >= 6) { out.push("…이후 줄도 다를 수 있어요"); break; }
   }
   if (!out.length) { ci++; return ci >= names.length ? finish() : m3Cls(names[ci - 1] + " 통과!"); }
@@ -451,13 +490,13 @@ inp.addEventListener("keydown", e => {
     return;
   }
   if (e.key !== "Enter" || locked) return;
-  const A = L(ci), ok = T(inp.value) === T(A[li]);
+  const A = L(ci), ok = N(inp.value) === N(A[li]);
   if (mode === 1) {
     if (ok) { li++; return m1Line(); }
-    locked = true; inp.disabled = true;
-    show.className = "big"; show.textContent = "정답: " + A[li];
-    setMsg("틀렸어요. " + names[ci] + "의 첫 줄부터 다시 시작합니다.", "bad");
-    later(() => { inp.disabled = false; li = 0; m1Line(); }, 3000);
+    locked = true; inp.hidden = true;
+    const info = showDiff(inp.value, A[li]);
+    setMsg("틀렸어요. " + info + "\n확인한 뒤 Enter나 아래 버튼을 누르면 " + names[ci] + "의 첫 줄부터 다시 시작해요.", "bad");
+    go.hidden = false; go.textContent = "처음 줄부터 다시 (Enter)"; go.onclick = m1Restart;
   } else {
     if (ok) { typed.push(A[li]); li++; return m2Line(); }
     inp.value = ""; setMsg("틀렸어요. 정답을 잠깐 보여줄게요. 다시 입력해 보세요.", "bad");
